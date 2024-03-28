@@ -2,6 +2,7 @@ package main
 
 import (
 	_ "embed"
+	"errors"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -52,6 +53,10 @@ func main() {
 
     fs.WalkDir(fileSystem, ".", func(path string, d fs.DirEntry, err error) error {
         if err != nil {
+            if errors.Is(err, fs.ErrPermission) {
+                fmt.Println("permission denied:", path)
+                return nil;
+            }
             panic(err)
         }
         info, err := d.Info()
@@ -91,20 +96,6 @@ func main() {
         formatted /= 1000
         magnitudeIndex++
     }
-
-    // fmt.Printf(
-    //     "num of files: %d, total size: %.2f %cB, raw size: %d\n", counter, formatted,
-    //     magnitude[magnitudeIndex], totalSize,
-    // )
-    // fmt.Println(pwd[0])
-    // fmt.Println(pwd[0].SizeDirs + pwd[0].SizeFiles)
-
-    // ret, err := json.Marshal(pwd[0])
-    // if err != nil {
-    //     panic(err)
-    // }
-
-    // fmt.Println(string(ret))
 
     t, err := template.New("foo").Parse(templ) 
     if err != nil {
