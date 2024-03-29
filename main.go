@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	// "strings"
 )
 
 type dir struct {
@@ -32,11 +33,21 @@ func main() {
     }
     fileSystem := os.DirFS(rootPath)
 
-    outputFileName := "output.html"
-    output, err := os.Create(outputFileName)
+    here, err := os.Getwd()
     if err != nil {
         panic(err)
     }
+
+    outputFileName := "output.html"
+    output, err := os.Create(outputFileName)
+    if err != nil {
+        if errors.Is(err, fs.ErrPermission) {
+            fmt.Fprintf(os.Stderr, "can't create file here: '%s'\n", here)
+            os.Exit(1)
+        }
+        panic(err)
+    }
+    defer output.Close()
 
     counter := 0
     totalSize := int64(0)
@@ -51,25 +62,45 @@ func main() {
         current.SizeDirs += pop.SizeDirs + pop.SizeFiles
     }
 
-    fs.WalkDir(fileSystem, ".", func(path string, d fs.DirEntry, err error) error {
-        if err != nil {
-            if errors.Is(err, fs.ErrPermission) {
+    fs.WalkDir(fileSystem, ".", func(path string, d fs.DirEntry, fserr error) error {
+
+        abs := filepath.Join(rootPath, path)
+
+        if abs == "/proc" {
+            fmt.Println(abs)
+            fmt.Println("problematic folder, skipping:", "/proc")
+            return fs.SkipDir
+        }
+
+        if fserr != nil {
+            permissionDenied := errors.Is(fserr, fs.ErrPermission)
+
+            if permissionDenied && d.IsDir() {
+                fmt.Println("permission denied, skipping directory:", path)
+                return fs.SkipDir;
+
+            } else if permissionDenied {
                 fmt.Println("permission denied:", path)
                 return nil;
+
+            } else {
+                panic(fserr)
             }
-            panic(err)
         }
         info, err := d.Info()
         if err != nil {
+            if errors.Is(err, fs.ErrNotExist) {
+                fmt.Println("file no longer exists:", abs)
+                return nil
+            }
             panic(err)
         }
 
-        for abs, _ := filepath.Abs(path); len(pwd) > 0 && filepath.Dir(abs) != pwd[len(pwd)-1].abs; {
+        for len(pwd) > 0 && filepath.Dir(abs) != pwd[len(pwd)-1].abs {
             popPwd()
         }
 
         if info.IsDir() {
-            abs, _ := filepath.Abs(path)
             pwd = append(pwd, &dir{abs, path, nil, 0, 0})
         } else {
             counter++
@@ -77,8 +108,6 @@ func main() {
             totalSize += size
             pwd[len(pwd)-1].SizeFiles += size
         }
-
-        // fmt.Print("\r", path)
 
         return nil
     })
@@ -102,6 +131,6 @@ func main() {
         panic(err)
     }
 
-    fmt.Println("saved to", outputFileName)
     t.Execute(output, pwd[0])
+    fmt.Println("saved to", outputFileName)
 }
